@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/safewatch
+    username: safewatch
+    password: safewatch
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+server:
+  port: 8080
+
+safewatch:
+  jwt:
+    # 토큰에 서명할 때 쓰는 열쇠. 이 값을 아는 쪽은 아무 토큰이나 만들어낼 수 있다.
+    # 즉 이 값만 알면 누구인 척하든 서버를 속일 수 있다. 그래서 이 파일에는 적지 않는다.
+    #
+    # 값은 두 곳 중 하나에서 온다.
+    #   - 로컬 개발: backend/config/application.yml  (.gitignore 로 막아둠, 스프링이 자동으로 읽음)
+    #   - 배포 환경: JWT_SECRET 환경변수
+    #
+    # 둘 다 없으면 서버가 뜨지 않는다. 의도된 동작이다.
+    # HS256 서명에는 32바이트 이상이 필요하다. 짧으면 기동할 때 예외가 난다.
+    secret: ${JWT_SECRET}
+    # 토큰 유효 시간(분). 짧을수록 안전하지만 자주 다시 로그인해야 한다.
+    expiry-minutes: 120

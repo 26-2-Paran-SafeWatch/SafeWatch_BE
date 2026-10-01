@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:16
+    container_name: safewatch-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: safewatch
+      POSTGRES_USER: safewatch
+      POSTGRES_PASSWORD: safewatch
+    ports:
+      - "5432:5432"
+    volumes:
+      - safewatch_pgdata:/var/lib/postgresql/data
+      # 아래 initdb 폴더의 *.sql 은 "최초 1회"(데이터 볼륨이 비어있을 때) 자동 실행됨
+      - ./initdb:/docker-entrypoint-initdb.d
+
+volumes:
+  safewatch_pgdata:
