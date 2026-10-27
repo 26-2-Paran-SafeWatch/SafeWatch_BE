@@ -76,6 +76,7 @@ CREATE TABLE events (
     plate_number TEXT,
     video_url    TEXT,                          -- 영상 파일은 스토리지에, DB엔 링크만
     thumb_url    TEXT,
+    video_deleted_at TIMESTAMPTZ,               -- 영상 파기 시각 (NULL = 보관 중). 무시하면 즉시, 아니면 2주 뒤 서버가 파기
     status       TEXT NOT NULL DEFAULT 'new'
                  CHECK (status IN ('new','reviewed','reported')),
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()

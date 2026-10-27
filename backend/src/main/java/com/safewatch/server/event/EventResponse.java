@@ -33,6 +33,10 @@ public record EventResponse(
         String plateNumber,
         String videoUrl,
         String thumbUrl,
+        /** 자동 파기 예정 시각 (보관 중일 때만, 아니면 null) */
+        OffsetDateTime videoExpiresAt,
+        /** 영상을 파기한 시각 (파기됐을 때만, 아니면 null) */
+        OffsetDateTime videoDeletedAt,
 
         String status,
         OffsetDateTime createdAt
@@ -52,6 +56,8 @@ public record EventResponse(
                 event.getPlateNumber(),
                 event.getVideoUrl(),
                 event.getThumbUrl(),
+                event.getVideoExpiresAt(),
+                event.getVideoDeletedAt(),
                 event.getStatus(),
                 event.getCreatedAt()
         );

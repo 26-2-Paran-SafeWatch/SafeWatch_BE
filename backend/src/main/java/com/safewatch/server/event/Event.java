@@ -3,6 +3,7 @@ package com.safewatch.server.event;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -44,6 +45,10 @@ public class Event {
 
     @Column(name = "thumb_url")
     private String thumbUrl;
+
+    /** 영상을 파기한 시각. null 이면 아직 보관 중(또는 처음부터 영상이 없음). */
+    @Column(name = "video_deleted_at")
+    private OffsetDateTime videoDeletedAt;
 
     private String status;
 
@@ -88,7 +93,41 @@ public class Event {
             throw new IllegalArgumentException("허용되지 않는 status: " + newStatus);
         }
         this.status = newStatus;
+        // 신고하지 않기로 했으면 증거 영상을 둘 이유가 없다 → 즉시 파기.
+        // 앱이 아니라 여기서 하는 이유: 어떤 경로로 상태를 바꾸든 규칙이 빠지지 않게.
+        if (STATUS_REVIEWED.equals(newStatus)) {
+            purgeVideo();
+        }
     }
+
+    /**
+     * 영상(과 썸네일) 주소를 지우고 파기 시각을 남긴다. 이미 파기됐거나 영상이 없으면 아무것도 안 한다.
+     *
+     * ponytail: DB 의 주소만 지운다. 실제 파일은 저장소(S3 등)에 남아 있으므로, 저장소가 정해지면
+     * 여기서 파일 삭제까지 해야 진짜 파기가 된다. (노션 9,10주차 "영상 보관·파기 정책")
+     */
+    public void purgeVideo() {
+        if (videoUrl == null && thumbUrl == null) {
+            return;
+        }
+        this.videoUrl = null;
+        this.thumbUrl = null;
+        this.videoDeletedAt = OffsetDateTime.now();
+    }
+
+    /** 자동 파기 예정 시각. 이미 파기됐거나 영상이 없으면 null. */
+    public OffsetDateTime getVideoExpiresAt() {
+        return (videoUrl == null) ? null : receivedAt.plus(VIDEO_RETENTION);
+    }
+
+    /**
+     * 영상 보관 기간. 신고 여부와 관계없이 이 기간이 지나면 자동 파기한다. 이용약관에 명시할 값.
+     *
+     * 기준은 detectedAt(촬영 시각)이 아니라 receivedAt(서버가 받은 시각)이다.
+     * 라즈베리파이는 시계 배터리가 없어 부팅 직후 시각이 틀릴 수 있고(5,6주차),
+     * 장치 시계가 과거로 찍히면 받자마자 파기되는 사고가 난다. 보통은 두 시각 차이가 몇 초다.
+     */
+    public static final Duration VIDEO_RETENTION = Duration.ofDays(14);
 
     /** 아직 사용자가 확인하지 않음 */
     public static final String STATUS_NEW = "new";

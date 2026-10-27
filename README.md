@@ -6,7 +6,7 @@
 ## 데이터 흐름
 
 ```
-[라즈베리파이 Edge AI]      [백엔드 서버]         [Flutter 앱]        [폰 로컬 DB]
+[라즈베리파이 Edge AI]      [백엔드 서버]         [React Native 앱]   [폰 로컬 DB]
    위험운전 감지    ──▶   POST /api/events  ──▶   목록/상세 확인  ──▶   offline-first 저장
    영상·위치·점수          PostgreSQL 저장          신고 처리           통신 끊겨도 열람 가능
                           FCM 푸시 발송(예정)
@@ -52,7 +52,7 @@ SafeWatch/
 |---|---|
 | 백엔드 | Spring Boot 4.1.1, Java 21, Gradle |
 | DB | PostgreSQL 16 (로컬 Docker, 배포 시 AWS RDS) |
-| 앱 | Flutter (별도 저장소, 미착수) |
+| 앱 | React Native (별도 저장소, 미착수) |
 | 지도 | 카카오맵 (앱 전용, 서버 API 불필요) |
 | 푸시 | FCM (미구현) |
 | 인증 | Spring Security + JWT (가입 완료, 로그인 미구현) |
@@ -243,6 +243,21 @@ curl -X PATCH http://localhost:8080/api/events/{id} \
 
 허용되지 않는 값이면 400, 없는 이벤트면 404.
 
+### 영상 보관·파기 (2026-10-26)
+
+영상은 신고용 증거라서, 목적이 끝나면 서버가 지운다. 앱이 꺼져 있어도 규칙이 지켜지도록 서버가 집행한다.
+
+| 경우 | 처리 |
+|---|---|
+| `reviewed`(무시)로 바뀜 | 그 요청 안에서 즉시 파기 |
+| 서버가 받은 지 2주 지남 | 신고 여부와 관계없이 자동 파기 (`VideoRetentionJob`, 매시 정각 + 서버 기동 시) |
+
+- 파기 = `video_url`·`thumb_url` 을 비우고 `video_deleted_at` 에 시각을 남긴다. 응답에는 `videoExpiresAt`(자동 파기 예정)과 `videoDeletedAt` 이 함께 나간다.
+- 기준 시각은 `detected_at` 이 아니라 `received_at` 이다. 장치 시계가 틀리면 받자마자 파기되는 사고를 막기 위해서다.
+- 보관 기간은 `Event.VIDEO_RETENTION` 한 곳에만 있다. 이용약관에 적을 값이므로 바꿀 때는 약관도 같이 고친다.
+- **한계:** DB 의 주소만 지운다. 실제 파일은 저장소(미정)에 남으므로 저장소가 정해지면 `Event.purgeVideo()` 에 파일 삭제를 붙여야 한다.
+- 이유(법적 문제·용량)는 노션 9,10주차 페이지에 정리.
+
 ### 참고
 
 `since` 는 앱이 마지막으로 받은 시각 이후 것만 가져가는 증분 동기화용이다. 매번 전체를 다시 받지 않아도 되므로 offline-first 설계와 맞물린다. URL 에 넣을 때 `+` 는 `%2B` 로 써야 한다.
@@ -365,7 +380,7 @@ users 1──N user_fcm_tokens
 3. 장치·신고 — Device, Report 엔티티와 엔드포인트
 4. FCM 푸시 — 이벤트 수신 시 해당 장치 소유자에게 발송
 5. DTO / Service 계층 분리, 예외 처리, 유효성 검증
-6. Flutter 앱 (별도) — 로그인 → 목록(offline-first, sqflite) → 상세(영상 + 카카오맵) → 신고
+6. React Native 앱 (별도) — 로그인 → 목록(offline-first) → 상세(영상 + 카카오맵) → 신고
 7. 배포 — AWS EC2 + RDS, `schema.sql` 그대로 적용 가능
 
 ## 외부 의존
@@ -374,6 +389,11 @@ users 1──N user_fcm_tokens
 - **영상 전달 방식 미확정** — 장치가 S3 등에 올리고 URL만 주는지, 서버로 업로드하는지에 따라 `video_url` 처리 방식이 달라진다.
 
 ## 변경 이력
+
+### 2026-10-26
+- **영상 보관·파기.** 무시하면 즉시, 그 외에는 받은 지 2주 뒤 자동으로 영상 주소를 지운다. `events.video_deleted_at` 칸 추가, `VideoRetentionJob` 추가, 응답에 `videoExpiresAt`·`videoDeletedAt` 추가. 규칙을 확인하는 단위 테스트 `EventVideoRetentionTest` 추가.
+- 돌고 있는 DB 용 변경분은 `backend/migrations/2026-10-26_video_deleted_at.sql`. 새 jar 를 올리기 **전에** 먼저 실행해야 한다(칸이 없으면 새 서버가 조회할 때 오류).
+- 8081 에서 확인: 15일 전에 받은 신고 이벤트가 서버 기동 시 파기됐고, `reviewed` 로 바꾸자 즉시 파기됐다. 로컬 DB 의 9월 시드 3건도 2주가 지나 함께 파기됐다(영상 주소가 원래 가짜라 영향 없음).
 
 ### 2026-09-29
 - **장치 → 서버 전송 경로 확인 (네트워크 너머).** 지금까지는 전부 `localhost` 안에서만 돌았다. `device/send_events.py` 를 만들어 LAN 주소로 전송하는 것을 확인했고, 휴대폰 브라우저로도 서버에 닿는 것을 확인했다.
