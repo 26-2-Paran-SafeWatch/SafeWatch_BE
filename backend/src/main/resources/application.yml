@@ -1,8 +1,10 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/safewatch
-    username: safewatch
-    password: safewatch
+    # 환경변수가 있으면 그 값, 없으면 로컬 Docker 기본값(: 뒤).
+    # 배포 서버는 DB_PASSWORD 를 서버에만 있는 파일에서 받는다. 저장소의 safewatch 는 로컬 전용.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/safewatch}
+    username: ${DB_USER:safewatch}
+    password: ${DB_PASSWORD:safewatch}
   jpa:
     hibernate:
       ddl-auto: none

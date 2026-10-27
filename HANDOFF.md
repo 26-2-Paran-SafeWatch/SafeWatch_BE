@@ -38,7 +38,7 @@ SafeWatch — 차량 Edge AI(라즈베리파이)가 감지한 음주·난폭운�
 데이터 흐름:
 
 ```
-[라즈베리파이 Edge AI]  →  [백엔드 서버]  →  [Flutter 앱]  →  [폰 로컬 DB]
+[라즈베리파이 Edge AI]  →  [백엔드 서버]  →  [React Native 앱]  →  [폰 로컬 DB]
    위험운전 감지            PostgreSQL 저장     목록·상세 확인    offline-first 저장
    영상·위치·점수           FCM 푸시(미구현)    신고/무시 처리    통신 끊겨도 열람
 ```
@@ -50,7 +50,7 @@ SafeWatch — 차량 Edge AI(라즈베리파이)가 감지한 음주·난폭운�
 - 프로젝트 루트: `/Users/alsrb1125/Desktop/SafeWatch/SafeWatch`
 - 백엔드: Spring Boot 4.1.1, Java 21, Gradle (`backend/`)
 - DB: PostgreSQL 16, Docker 컨테이너 `safewatch-db` (`docker/docker-compose.yml`)
-- 앱: Flutter (미착수, 별도 예정) / 지도: 카카오맵 / 푸시: FCM
+- 앱: React Native (미착수, 별도 예정) / 지도: 카카오맵 / 푸시: FCM
 - **아직 git 저장소가 아니다.** `git init` 안 했다.
 
 실행:
@@ -138,7 +138,7 @@ CHECK 제약: `risk_type` 은 `drunk_suspect / lane_departure / sudden_accel / s
 
 ### 확인용 웹 화면
 
-`frontend/index.html` — 외부 라이브러리 없는 파일 하나. Flutter 앱 전에 동작을 눈으로 보려고 만들었다.
+`frontend/index.html` — 외부 라이브러리 없는 파일 하나. 앱 전에 동작을 눈으로 보려고 만들었다.
 이벤트 목록(5초 자동 갱신) + 신고/무시 버튼, 장치 시뮬레이터(라즈베리파이 흉내), 회원가입, 로그인(토큰 내용 풀어서 표시), 응답 기록.
 실패 시연용 선택지도 넣어뒀다(등록 안 된 장치, 잘못된 위험 종류, 틀린 비밀번호, 없는 계정).
 
@@ -231,7 +231,7 @@ CHECK 제약: `risk_type` 은 `drunk_suspect / lane_departure / sudden_accel / s
 4. **구글 로그인 추가** — 아주메일(`@ajou.ac.kr`)은 구글이 운영하므로(MX가 전부 Google) 구글 로그인 하나로 학교 계정까지 커버된다. 단 **앱에서의 구글 로그인은 웹과 흐름이 다르다.** 앱이 구글에서 ID 토큰을 받아 서버로 보내고 서버가 검증하는 방식이어야 한다. `users.password_hash` 가 NOT NULL이라 소셜 가입을 받으려면 스키마 변경 필요(비워둘 수 있게 + 가입 경로 기록).
 5. **장치·신고 API** — 신고 버튼은 지금 `events.status` 만 바꾼다. `reports` 테이블은 만들어뒀지만 자바 코드에서 쓰는 곳이 없다. 누가 신고했는지 남기려면 로그인 위에 얹어야 한다.
 6. **FCM 푸시** — 이벤트 수신 시 해당 장치 소유자에게 발송. 핵심 루프에서 유일하게 사용자에게 안 닿는 부분.
-7. **Flutter 앱** — 로그인 → 목록(offline-first, sqflite) → 상세(영상 + 카카오맵) → 신고
+7. **React Native 앱** — 로그인 → 목록(offline-first) → 상세(영상 + 카카오맵) → 신고
 8. **AWS 배포** — EC2 + RDS
 
 ## 11. 외부 의존 (내가 통제 못 하는 것)
