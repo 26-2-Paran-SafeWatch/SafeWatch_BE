@@ -36,6 +36,7 @@ CREATE TABLE users (
 CREATE TABLE devices (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name          TEXT NOT NULL,                 -- 예: "민규 차량 1호"
+    code          TEXT NOT NULL UNIQUE,          -- 장치가 스스로 부르는 이름. AI 이벤트의 device_id (예: safewatch-dev-001)
     owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL,  -- 주인이 탈퇴해도 장치는 남김
     registered_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -60,26 +61,37 @@ CREATE INDEX idx_user_fcm_tokens_user ON user_fcm_tokens(user_id);
 
 -- -----------------------------------------------------------------------------
 -- events : 위험운전 이벤트 (핵심 테이블)
---   id 는 장치(라즈베리파이)가 생성한 UUID 를 그대로 사용 → 통신 지연/중복에 강함.
---   risk_type / status 는 별도 테이블로 정규화하지 않고 CHECK 제약으로 값만 강제.
+--   형식은 AI 파트 이벤트 스키마(SafeWatch_AI docs/event-schema.md v0.7, 5.1 확정안)를 따른다. 2026-11-02 변경.
+--   id 는 서버가 매긴다. AI 의 event_id(evt_YYYYMMDD_HHMMSS_NNN)는 시각 기반이라 장치끼리 겹칠 수 있어서
+--   event_key 로 따로 두고, 중복 판별은 (device_id, event_key) 짝으로 한다 → 재전송해도 한 건.
+--   risk_types / indicators 처럼 AI 가 정하는 값은 AI 문서의 허용값을 그대로 쓴다.
 -- -----------------------------------------------------------------------------
 CREATE TABLE events (
-    id           UUID PRIMARY KEY,              -- 장치가 생성한 UUID (서버가 매기지 않음)
-    device_id    UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    detected_at  TIMESTAMPTZ NOT NULL,          -- AI가 감지한 시각(장치 시계)
-    received_at  TIMESTAMPTZ NOT NULL DEFAULT now(),  -- 서버가 받은 시각
-    risk_type    TEXT NOT NULL
-                 CHECK (risk_type IN ('drunk_suspect','lane_departure','sudden_accel','swerving')),
-    risk_score   SMALLINT NOT NULL CHECK (risk_score BETWEEN 0 AND 100),
-    latitude     DOUBLE PRECISION,
-    longitude    DOUBLE PRECISION,
-    plate_number TEXT,
-    video_url    TEXT,                          -- 영상 파일은 스토리지에, DB엔 링크만
-    thumb_url    TEXT,
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    device_id      UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    event_key      TEXT NOT NULL,                 -- AI 의 event_id. 장치 안에서만 고유
+    detected_at    TIMESTAMPTZ NOT NULL,          -- AI 의 timestamp (장치 시계)
+    received_at    TIMESTAMPTZ NOT NULL DEFAULT now(),  -- 서버가 받은 시각
+    risk_score     SMALLINT NOT NULL CHECK (risk_score BETWEEN 0 AND 100),  -- 음주 의심 점수
+    risk_level     TEXT NOT NULL CHECK (risk_level IN ('low','medium','high')),  -- 등급 구간은 AI 가 정한다
+    risk_types     TEXT[] NOT NULL                -- 동시에 여러 개. NHTSA 차로 유지 단서
+                   CHECK (cardinality(risk_types) >= 1 AND risk_types <@
+                          ARRAY['lane_departure','weaving','swerving','drifting','speed_irregular']),
+    indicators     JSONB,                         -- 판단 근거 수치. 판단에 쓴 것만 들어온다
+    target_vehicle JSONB,                         -- 추적 정보 (디버깅·신뢰도 참고)
+    latitude       DOUBLE PRECISION,              -- GPS 를 못 잡으면 위치 전체가 비어서 온다
+    longitude      DOUBLE PRECISION,
+    speed_kmh      DOUBLE PRECISION,              -- 자차 속도
+    heading        DOUBLE PRECISION,              -- 자차 진행 방위각 0~360
+    clip           JSONB,                         -- 영상 클립 정보(길이·해상도·블러 여부). 파일 자체는 아님
+    video_url      TEXT,                          -- 영상 파일은 스토리지에, DB엔 링크만 (전송 방식 결정 후 채워짐)
+    thumb_url      TEXT,
     video_deleted_at TIMESTAMPTZ,               -- 영상 파기 시각 (NULL = 보관 중). 무시하면 즉시, 아니면 2주 뒤 서버가 파기
-    status       TEXT NOT NULL DEFAULT 'new'
-                 CHECK (status IN ('new','reviewed','reported')),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    meta           JSONB,                         -- 모델·규칙 버전 (언제 어떤 모델이 잡았는지 추적)
+    status         TEXT NOT NULL DEFAULT 'new'
+                   CHECK (status IN ('new','reviewed','reported')),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (device_id, event_key)                 -- 재전송 중복 판별
 );
 CREATE INDEX idx_events_device      ON events(device_id);
 CREATE INDEX idx_events_received_at ON events(received_at DESC);  -- 최신순 조회/증분 동기화

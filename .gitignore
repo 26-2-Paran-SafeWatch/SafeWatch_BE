@@ -53,3 +53,6 @@ bin/
 .vscode/
 *.swp
 *~
+
+# AI 파트 저장소 (SafeWatch_AI, 구조 파악용으로 받아둠)
+/ai/

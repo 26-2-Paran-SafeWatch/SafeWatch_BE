@@ -1,5 +1,7 @@
 package com.safewatch.server.event;
 
+import com.safewatch.server.device.Device;
+import com.safewatch.server.device.DeviceRepository;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -27,9 +29,11 @@ import java.util.UUID;
 public class EventController {
 
     private final EventRepository eventRepository;
+    private final DeviceRepository deviceRepository;
 
-    public EventController(EventRepository eventRepository) {
+    public EventController(EventRepository eventRepository, DeviceRepository deviceRepository) {
         this.eventRepository = eventRepository;
+        this.deviceRepository = deviceRepository;
     }
 
     /**
@@ -70,18 +74,26 @@ public class EventController {
     /**
      * 장치가 감지한 위험 이벤트를 등록한다. 호출자는 앱이 아니라 라즈베리파이다.
      *
-     * 같은 id 가 이미 있으면 새로 만들지 않고 기존 것을 200 으로 돌려준다.
+     * 본문은 AI 이벤트 JSON 그대로다(EventCreateRequest 참고).
+     *
+     * 같은 장치가 같은 event_id 를 다시 보내면 새로 만들지 않고 기존 것을 200 으로 돌려준다.
      * 차량은 통신이 자주 끊겨 장치가 같은 이벤트를 재전송할 수 있는데,
      * 이때 409 를 주면 장치가 실패로 보고 계속 재시도한다. 중복 전송이 안전하도록 이렇게 처리한다.
      */
     @PostMapping
     public ResponseEntity<EventResponse> createEvent(@Valid @RequestBody EventCreateRequest request) {
-        Optional<Event> existing = eventRepository.findById(request.id());
+        // AI 의 device_id 는 장치 이름(예: safewatch-dev-001)이라 서버의 장치 번호로 바꾼다
+        UUID deviceId = deviceRepository.findByCode(request.deviceId())
+                .map(Device::getId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "등록되지 않은 장치입니다: " + request.deviceId()));
+
+        Optional<Event> existing = eventRepository.findByDeviceIdAndEventKey(deviceId, request.eventId());
         if (existing.isPresent()) {
             return ResponseEntity.ok(EventResponse.from(existing.get()));
         }
 
-        Event saved = eventRepository.save(request.toEntity());
+        Event saved = eventRepository.save(request.toEntity(deviceId));
 
         return ResponseEntity
                 .created(ServletUriComponentsBuilder.fromCurrentRequest()

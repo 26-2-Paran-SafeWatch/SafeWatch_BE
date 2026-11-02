@@ -2,7 +2,11 @@ package com.safewatch.server.event;
 
 import org.junit.jupiter.api.Test;
 
+import org.springframework.test.util.ReflectionTestUtils;
+
 import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -11,8 +15,13 @@ import static org.junit.jupiter.api.Assertions.*;
 class EventVideoRetentionTest {
 
     private Event newEvent() {
-        return new Event(UUID.randomUUID(), UUID.randomUUID(), OffsetDateTime.now(),
-                "drunk_suspect", 88, 37.0, 127.0, "12가 3456", "https://x/clip.mp4", "https://x/thumb.jpg");
+        Event e = new Event(UUID.randomUUID(), "evt_20261102_143022_001", OffsetDateTime.now(),
+                88, "high", List.of("lane_departure", "weaving"), Map.of(), Map.of(),
+                37.0, 127.0, 60.0, 90.0, Map.of(), Map.of());
+        // ponytail: 영상 주소를 채우는 경로(전송 방식)가 아직 없어서 테스트에서만 직접 넣는다
+        ReflectionTestUtils.setField(e, "videoUrl", "https://x/clip.mp4");
+        ReflectionTestUtils.setField(e, "thumbUrl", "https://x/thumb.jpg");
+        return e;
     }
 
     @Test

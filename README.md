@@ -190,32 +190,53 @@ docker exec safewatch-db psql -U safewatch -d postgres -c "DROP DATABASE schemac
 
 ### 등록 — 라즈베리파이가 호출
 
+본문은 **AI 파트 이벤트 JSON 그대로**다(SafeWatch_AI `docs/event-schema.md` v0.7, 5.1 확정안). AI 의 `src/event/builder.py` 나 `scripts/generate_dummy_event.py` 가 만든 JSON 을 변환 없이 보내면 된다. 그래서 이 요청만 필드 이름이 snake_case 다. 2026-11-02 에 이 형식으로 바꿨다.
+
 ```bash
+python3 ai/scripts/generate_dummy_event.py --count 3 --output /tmp/samples   # AI 더미 생성기
 curl -X POST http://localhost:8080/api/events \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "id": "장치가 만든 UUID",
-    "deviceId": "aaaaaaaa-0000-0000-0000-000000000001",
-    "detectedAt": "2026-09-10T16:50:00+09:00",
-    "riskType": "swerving",
-    "riskScore": 91,
-    "latitude": 37.28,
-    "longitude": 127.04,
-    "plateNumber": "99희 1234"
-  }'
+  -H 'Content-Type: application/json' --data @/tmp/samples/evt_....json
 ```
 
-`receivedAt`, `status`, `createdAt` 은 보내지 않는다. 서버가 정하는 값이다.
-`latitude`, `longitude`, `plateNumber`, `videoUrl`, `thumbUrl` 은 선택이다.
+```json
+{
+  "event_id": "evt_20261102_143022_001",
+  "device_id": "safewatch-dummy-001",
+  "timestamp": "2026-11-02T14:30:22.451+09:00",
+  "risk": { "score": 78, "level": "high", "types": ["lane_departure", "weaving"] },
+  "indicators": { "observation_window_sec": 10.0, "lane_departure_duration_sec": 2.8, "direction_changes_count": 4 },
+  "target_vehicle": { "track_id": 17, "tracked_duration_sec": 12.4, "avg_detection_confidence": 0.87 },
+  "location": { "latitude": 37.32, "longitude": 126.83, "speed_kmh": 62.5, "heading": 271.3 },
+  "clip": { "filename": "evt_20261102_143022_001.mp4", "duration_sec": 15, "resolution": "1280x720", "blurred": true },
+  "meta": { "model_version": "yolov8n-safewatch-v0.3", "rule_version": "risk-v1.2" }
+}
+```
+
+| 필드 | 필수 | 규칙 |
+|---|---|---|
+| `event_id` | ✓ | 장치 안에서 고유한 번호 |
+| `device_id` | ✓ | **등록된 장치 이름** (`devices.code`). 지금은 `safewatch-dev-001`, `safewatch-dummy-001` |
+| `timestamp` | ✓ | ISO 8601, 타임존 포함 |
+| `risk.score` | ✓ | 0~100 |
+| `risk.level` | ✓ | `low` / `medium` / `high` |
+| `risk.types` | ✓ | 1개 이상. `lane_departure` / `weaving` / `swerving` / `drifting` / `speed_irregular` |
+| `indicators`, `target_vehicle`, `clip`, `meta` | | 받은 그대로 저장 (키를 고정하지 않음) |
+| `location` | | GPS 를 못 잡으면 통째로 빼도 된다 |
 
 | 상황 | 응답 |
 |---|---|
 | 정상 등록 | 201, `Location` 헤더에 상세 주소 |
-| 같은 id 재전송 | 200, 기존 이벤트 반환 (중복 생성 안 됨) |
-| riskType/riskScore 등이 규칙 위반 | 400, 어느 필드가 왜 틀렸는지 함께 반환 |
-| 등록되지 않은 deviceId | 400 |
+| 같은 장치가 같은 `event_id` 재전송 | 200, 기존 이벤트 반환 (중복 생성 안 됨) |
+| 규칙 위반 (예: 모르는 `risk.types`) | 400, `errors` 에 어느 필드가 왜 틀렸는지 |
+| 등록되지 않은 `device_id` | 400, "등록되지 않은 장치입니다" |
 
 **같은 id 를 다시 보내면 왜 409 가 아니라 200 인가.** 차량은 통신이 자주 끊긴다. 장치가 이벤트를 보냈는데 응답을 못 받으면 같은 것을 다시 보낸다. 이때 409(충돌)를 주면 장치는 실패로 보고 계속 재시도한다. 중복 전송이 안전하도록 이미 받은 이벤트면 그대로 200 을 돌려준다.
+
+**서버가 id 를 따로 매기는 이유.** AI 의 `event_id` 는 `evt_날짜_시각_순번` 이라 **차 두 대가 같은 초에 감지하면 똑같아진다.** 이걸 그대로 고유 키로 쓰면 나중 것이 중복으로 처리돼 사라진다. 그래서 서버는 자기 UUID(`id`)를 쓰고, AI 번호는 `eventKey` 로 따로 두어 **(장치, eventKey) 짝**으로 중복을 판별한다.
+
+**응답(앱용)은 camelCase** 다: `riskScore`, `riskLevel`, `riskTypes`, `indicators`, `speedKmh`, `clip`, `videoUrl` 등. `target_vehicle`, `meta` 는 저장만 하고 앱에는 내보내지 않는다(디버깅용).
+
+**아직 없는 것: 영상 파일.** 전송 방식(AI 문서 1장 A/B/C안)이 정해지면 붙인다. 그 전까지 `videoUrl` 은 비어 있고, 앱은 클립 정보가 있으면 "영상 업로드 대기 중"을 보여준다.
 
 ### 목록 / 상세
 
@@ -352,16 +373,17 @@ users 1──N user_fcm_tokens
 | 테이블 | 주요 컬럼 |
 |---|---|
 | users | id(UUID PK), email(unique), password_hash, display_name, created_at |
-| devices | id(UUID PK), name, owner_user_id(FK→users), registered_at |
-| events | id(UUID PK), device_id(FK→devices), detected_at, received_at, risk_type, risk_score, latitude, longitude, plate_number, video_url, thumb_url, status, created_at |
+| devices | id(UUID PK), name, code(unique, 장치 이름 = AI 의 device_id), owner_user_id(FK→users), registered_at |
+| events | id(UUID PK), device_id(FK→devices), event_key, detected_at, received_at, risk_score, risk_level, risk_types(배열), indicators·target_vehicle·clip·meta(JSONB), latitude, longitude, speed_kmh, heading, video_url, thumb_url, video_deleted_at, status, created_at. UNIQUE(device_id, event_key) |
 | reports | id(UUID PK), event_id(FK→events), user_id(FK→users), reported_at, memo |
 | user_fcm_tokens | id(UUID PK), user_id(FK→users), token(unique), platform, created_at, updated_at |
 
-제약: `risk_type` 은 `drunk_suspect / lane_departure / sudden_accel / swerving`, `risk_score` 는 0~100, `status` 는 `new / reviewed / reported`(기본 `new`).
+제약: `risk_types` 는 1개 이상이고 `lane_departure / weaving / swerving / drifting / speed_irregular` 안에서만, `risk_level` 은 `low / medium / high`, `risk_score` 는 0~100, `status` 는 `new / reviewed / reported`(기본 `new`).
 
 ### 설계 결정과 이유
 
-- **id를 자동증가가 아닌 UUID로** — 통신이 끊겼다 몰아서 올라올 때 번호가 꼬이지 않게. 장치가 직접 생성한 UUID를 서버가 그대로 쓴다.
+- **id를 자동증가가 아닌 UUID로** — 통신이 끊겼다 몰아서 올라올 때 번호가 꼬이지 않게. 처음엔 장치가 만든 UUID 를 그대로 썼는데, AI 형식으로 바꾸면서(2026-11-02) 서버가 매기고 장치 번호는 `event_key` 로 분리했다. AI 번호는 장치끼리 겹칠 수 있기 때문이다.
+- **AI 가 정하는 값은 해석하지 않고 저장** — 위험 종류·등급·근거 수치는 AI 가 기준을 바꾸는 값이다. 서버가 의미를 알면 AI 가 바뀔 때마다 서버도 고쳐야 한다. 그래서 `indicators` 등은 JSONB 로 받은 그대로 둔다. 단 앱이 화면에 쓰는 `risk_types`·`risk_level` 은 DB CHECK 로 허용값을 강제한다.
 - **시각을 둘로 분리** — `detected_at`(장치가 감지한 시각)과 `received_at`(서버가 받은 시각)은 통신 지연 때문에 다를 수 있다.
 - **영상은 URL만 저장** — 파일은 용량이 크므로 스토리지에 두고 DB에는 링크만 남긴다.
 - **`ddl-auto: none`** — 스키마는 SQL로 직접 만들었으므로 JPA가 건드리지 않게 한다.
@@ -389,6 +411,14 @@ users 1──N user_fcm_tokens
 - **영상 전달 방식 미확정** — 장치가 S3 등에 올리고 URL만 주는지, 서버로 업로드하는지에 따라 `video_url` 처리 방식이 달라진다.
 
 ## 변경 이력
+
+### 2026-11-02
+- **이벤트 형식을 AI 파트 스키마로 변경.** `POST /api/events` 가 AI 이벤트 JSON(snake_case, 중첩)을 그대로 받는다. 위험 종류는 AI 확정안 5개(차선 걸침·사행·스웨빙·표류·속도 불규칙)로, 한 이벤트에 여러 개. 등급(`risk_level`), 판단 근거 수치(`indicators`), 자차 속도·방위각, 클립 정보, 모델 버전을 저장한다. 번호판(`plate_number`)은 AI·HW 모두 만들지 않아 뺐다.
+- **id 는 서버가 매기고 중복 판별은 (장치, event_key)** — AI 번호는 장치끼리 겹칠 수 있어서.
+- **`devices.code`(장치 이름) 추가** — AI 의 `device_id` 는 `safewatch-dev-001` 같은 이름이라 이 칸으로 장치를 찾는다. `Device` 엔티티·`DeviceRepository` 추가.
+- 돌고 있는 DB 용 변경분 `backend/migrations/2026-11-02_ai_event_schema.sql`. **events·reports 를 지우고 새로 만든다**(옛 형식은 옮길 수 없고 전부 테스트 데이터). 시드 3건은 새 형식으로 다시 넣는다.
+- 8081 에서 확인: AI 더미 생성기 JSON 3건 그대로 201, 재전송 200, 같은 event_id 를 다른 장치가 보내면 따로 201, 등록 안 된 장치 400, 옛 위험 종류(`drunk_suspect`) 400, 위치·클립 없는 JSON 201, 무시(PATCH) 정상. 테스트 데이터 정리.
+- ⚠️ HW 의 `edge/upload/sender.py` 는 옛 형식으로 변환해 보내므로 **이제 400** 을 받는다. 변환 없이 AI JSON 을 그대로 보내도록 바꿔야 한다. `device/send_events.py`, `frontend/dev-console` 도 옛 형식.
 
 ### 2026-10-26
 - **영상 보관·파기.** 무시하면 즉시, 그 외에는 받은 지 2주 뒤 자동으로 영상 주소를 지운다. `events.video_deleted_at` 칸 추가, `VideoRetentionJob` 추가, 응답에 `videoExpiresAt`·`videoDeletedAt` 추가. 규칙을 확인하는 단위 테스트 `EventVideoRetentionTest` 추가.
