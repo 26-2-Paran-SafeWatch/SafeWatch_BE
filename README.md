@@ -241,7 +241,7 @@ curl -X POST http://localhost:8080/api/events \
 이벤트 JSON 을 먼저 보낸 뒤, 그 이벤트의 mp4 를 **본문 그대로** 보낸다. 정차 후 WiFi 로 몇 시간 늦게 와도 된다(AI 문서 C안).
 
 ```bash
-curl -X PUT "http://13.124.88.158:8080/api/events/clip?device_id=safewatch-dev-001&event_id=evt_20261119_143022_001" \
+curl -X PUT "https://safewatch.co.kr/api/events/clip?device_id=safewatch-dev-001&event_id=evt_20261119_143022_001" \
   -H 'Content-Type: video/mp4' --data-binary @evt_20261119_143022_001.mp4
 ```
 
@@ -436,6 +436,7 @@ users 1──N user_fcm_tokens
 ## 변경 이력
 
 ### 2026-11-19
+- **도메인·https: `https://safewatch.co.kr`.** 가비아에서 등록, A 레코드 → 고정 IP. Let's Encrypt 인증서(자동 갱신, 갱신 리허설 성공), http 는 https 로 자동 이동(IP 로 들어와도 도메인으로). nginx 업로드 제한 1MB → 50MB. https 로 8MB 클립 업로드 200 확인. 앱 기본 서버 주소도 도메인으로. 8080 은 HW 가 새 주소로 옮기면 닫는다.
 - **고정 IP(Elastic IP) `13.124.88.158`.** 도메인·https 준비 1단계. 예전 주소 `3.34.130.6` 은 끊김. 앱 기본 서버 주소(`frontend/api.js`)도 변경. 도메인은 `safewatch.co.kr` 로 정함(구매 후 https 연결 예정).
 - **영상 클립 업로드 (S3).** `PUT /api/events/clip` 추가, `ClipStorage`(S3 올리기·지우기·임시 재생 주소) 추가, AWS SDK `software.amazon.awssdk:s3` 2.57.0. `events.video_url` → `video_key`(S3 파일 이름), 운영 DB 변경분 `backend/migrations/2026-11-19_video_key.sql`. 파기(무시·2주) 때 S3 파일도 삭제 — 9,10주차에 남겨둔 "저장소가 정해지면 실제 파일 삭제" 과제 해결.
 - 실제 S3 로 확인(로컬 8081): 업로드 200, 임시 주소로 내려받은 파일이 원본과 같은 크기, S3 에 암호화 저장, 재전송 200, 이벤트 없음 404, 모르는 장치 400, mp4 아님 415, 주소 만료 3600초, 서명 없이 직접 접근 403, **무시 → S3 파일 삭제**, **15일 전 이벤트 → 서버 기동 시 S3 파일 삭제**, 파기된·무시한 이벤트에 업로드 410. 시험 데이터·S3 파일 정리(버킷 0개).
