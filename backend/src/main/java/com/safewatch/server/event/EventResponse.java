@@ -42,6 +42,7 @@ public record EventResponse(
 
         /** 클립 정보 (길이·해상도·블러 여부) */
         Map<String, Object> clip,
+        /** 영상 재생 주소. 1시간 뒤 만료되는 임시 주소(S3 비공개 버킷). 영상이 없으면 null */
         String videoUrl,
         String thumbUrl,
         /** 자동 파기 예정 시각 (보관 중일 때만, 아니면 null) */
@@ -53,8 +54,8 @@ public record EventResponse(
         OffsetDateTime createdAt
 ) {
 
-    /** 엔티티를 응답 객체로 옮겨 담는다. */
-    public static EventResponse from(Event event) {
+    /** 엔티티를 응답 객체로 옮겨 담는다. videoUrl 은 ClipStorage.playUrl 로 만든 임시 재생 주소. */
+    public static EventResponse from(Event event, String videoUrl) {
         return new EventResponse(
                 event.getId(),
                 event.getDeviceId(),
@@ -70,17 +71,12 @@ public record EventResponse(
                 event.getSpeedKmh(),
                 event.getHeading(),
                 event.getClip(),
-                event.getVideoUrl(),
+                videoUrl,
                 event.getThumbUrl(),
                 event.getVideoExpiresAt(),
                 event.getVideoDeletedAt(),
                 event.getStatus(),
                 event.getCreatedAt()
         );
-    }
-
-    /** 목록용. 여러 건을 한 번에 옮겨 담는다. */
-    public static List<EventResponse> from(List<Event> events) {
-        return events.stream().map(EventResponse::from).toList();
     }
 }

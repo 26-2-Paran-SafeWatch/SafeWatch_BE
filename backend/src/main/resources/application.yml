@@ -26,3 +26,10 @@ safewatch:
     secret: ${JWT_SECRET}
     # 토큰 유효 시간(분). 짧을수록 안전하지만 자주 다시 로그인해야 한다.
     expiry-minutes: 120
+
+  clips:
+    # 영상 클립 보관함(S3). 비공개 버킷이라 앱에는 1시간짜리 임시 재생 주소를 준다.
+    # 접근 권한: EC2 는 서버에 붙인 IAM 역할(SafeWatchServerRole), 로컬은 AWS_PROFILE 의 키.
+    bucket: ${CLIP_BUCKET:safewatch-clips-479365371969}
+    region: ap-northeast-2
+

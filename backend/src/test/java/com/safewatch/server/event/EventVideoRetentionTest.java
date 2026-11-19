@@ -18,8 +18,7 @@ class EventVideoRetentionTest {
         Event e = new Event(UUID.randomUUID(), "evt_20261102_143022_001", OffsetDateTime.now(),
                 88, "high", List.of("lane_departure", "weaving"), Map.of(), Map.of(),
                 37.0, 127.0, 60.0, 90.0, Map.of(), Map.of());
-        // ponytail: 영상 주소를 채우는 경로(전송 방식)가 아직 없어서 테스트에서만 직접 넣는다
-        ReflectionTestUtils.setField(e, "videoUrl", "https://x/clip.mp4");
+        e.attachVideo("clips/test.mp4");
         ReflectionTestUtils.setField(e, "thumbUrl", "https://x/thumb.jpg");
         return e;
     }
@@ -27,8 +26,8 @@ class EventVideoRetentionTest {
     @Test
     void 무시하면_영상이_즉시_파기된다() {
         Event e = newEvent();
-        e.changeStatus(Event.STATUS_REVIEWED);
-        assertNull(e.getVideoUrl());
+        assertEquals("clips/test.mp4", e.changeStatus(Event.STATUS_REVIEWED));   // S3 에서 지울 이름
+        assertNull(e.getVideoKey());
         assertNull(e.getThumbUrl());
         assertNotNull(e.getVideoDeletedAt());
         assertNull(e.getVideoExpiresAt());
@@ -38,9 +37,21 @@ class EventVideoRetentionTest {
     void 신고하면_영상이_남고_2주_뒤_파기_예정이다() {
         Event e = newEvent();
         e.changeStatus(Event.STATUS_REPORTED);
-        assertNotNull(e.getVideoUrl());
+        assertNotNull(e.getVideoKey());
         assertNull(e.getVideoDeletedAt());
         assertEquals(e.getReceivedAt().plusDays(14), e.getVideoExpiresAt());
+    }
+
+    @Test
+    void 파기했거나_무시한_이벤트는_영상을_받지_않는다() {
+        Event purged = newEvent();
+        purged.purgeVideo();
+        assertFalse(purged.canAttachVideo());
+        assertThrows(IllegalStateException.class, () -> purged.attachVideo("clips/late.mp4"));
+
+        Event old = newEvent();   // 서버가 받은 지 15일 지남 → 받자마자 지울 영상
+        ReflectionTestUtils.setField(old, "receivedAt", OffsetDateTime.now().minusDays(15));
+        assertFalse(old.canAttachVideo());
     }
 
     @Test

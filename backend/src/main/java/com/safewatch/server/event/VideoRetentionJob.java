@@ -24,9 +24,11 @@ public class VideoRetentionJob {
     private static final Logger log = LoggerFactory.getLogger(VideoRetentionJob.class);
 
     private final EventRepository eventRepository;
+    private final ClipStorage clipStorage;
 
-    public VideoRetentionJob(EventRepository eventRepository) {
+    public VideoRetentionJob(EventRepository eventRepository, ClipStorage clipStorage) {
         this.eventRepository = eventRepository;
+        this.clipStorage = clipStorage;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -35,8 +37,9 @@ public class VideoRetentionJob {
     public void purgeExpiredVideos() {
         OffsetDateTime cutoff = OffsetDateTime.now().minus(Event.VIDEO_RETENTION);
         // ponytail: 대상을 전부 읽어와 하나씩 지운다. 하루 수천 건 넘게 쌓이면 UPDATE 한 번으로 바꾼다.
-        List<Event> expired = eventRepository.findByVideoUrlIsNotNullAndReceivedAtBefore(cutoff);
-        expired.forEach(Event::purgeVideo);   // 트랜잭션이 끝날 때 바뀐 값이 DB 에 저장된다
+        List<Event> expired = eventRepository.findByVideoKeyIsNotNullAndReceivedAtBefore(cutoff);
+        // DB 는 트랜잭션이 끝날 때 저장되고, S3 파일은 여기서 바로 지운다
+        expired.stream().map(Event::purgeVideo).filter(java.util.Objects::nonNull).forEach(clipStorage::delete);
         if (!expired.isEmpty()) {
             log.info("보관 기간이 지난 영상 {}건 파기", expired.size());
         }

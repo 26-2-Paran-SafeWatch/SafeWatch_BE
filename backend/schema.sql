@@ -84,7 +84,7 @@ CREATE TABLE events (
     speed_kmh      DOUBLE PRECISION,              -- 자차 속도
     heading        DOUBLE PRECISION,              -- 자차 진행 방위각 0~360
     clip           JSONB,                         -- 영상 클립 정보(길이·해상도·블러 여부). 파일 자체는 아님
-    video_url      TEXT,                          -- 영상 파일은 스토리지에, DB엔 링크만 (전송 방식 결정 후 채워짐)
+    video_key      TEXT,                          -- 영상 클립의 S3 파일 이름(clips/{id}.mp4). 버킷이 비공개라 재생 주소는 서버가 볼 때마다 만든다
     thumb_url      TEXT,
     video_deleted_at TIMESTAMPTZ,               -- 영상 파기 시각 (NULL = 보관 중). 무시하면 즉시, 아니면 2주 뒤 서버가 파기
     meta           JSONB,                         -- 모델·규칙 버전 (언제 어떤 모델이 잡았는지 추적)

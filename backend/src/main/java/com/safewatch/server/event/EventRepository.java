@@ -18,5 +18,5 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
     Optional<Event> findByDeviceIdAndEventKey(UUID deviceId, String eventKey);
 
     /** 자동 파기 대상. 영상이 남아 있고 보관 기간이 지난 것. */
-    List<Event> findByVideoUrlIsNotNullAndReceivedAtBefore(OffsetDateTime cutoff);
+    List<Event> findByVideoKeyIsNotNullAndReceivedAtBefore(OffsetDateTime cutoff);
 }

@@ -76,9 +76,9 @@ public class Event {
     @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, Object> clip;
 
-    /** 영상 파일 주소. 영상 전송 방식(AI 문서 1장 A/B/C안)이 정해지면 채워진다. 지금은 비어 있다. */
-    @Column(name = "video_url")
-    private String videoUrl;
+    /** 영상 클립의 S3 파일 이름(예: clips/{id}.mp4). 장치가 클립을 올리면 채워진다. 주소가 아니라 이름만 둔다 — 버킷이 비공개라 재생 주소는 볼 때마다 ClipStorage 가 만든다. */
+    @Column(name = "video_key")
+    private String videoKey;
 
     @Column(name = "thumb_url")
     private String thumbUrl;
@@ -135,36 +135,57 @@ public class Event {
      * status 하나뿐이기 때문이다. 감지 결과(위험도·위치·시각)는 장치가 보낸 사실이므로
      * 나중에 고쳐지면 안 된다.
      */
-    public void changeStatus(String newStatus) {
+    /**
+     * @return 이번에 파기한 영상의 S3 파일 이름(없으면 null). 호출한 쪽이 S3 에서도 지워야 한다.
+     */
+    public String changeStatus(String newStatus) {
         if (!ALLOWED_STATUSES.contains(newStatus)) {
             throw new IllegalArgumentException("허용되지 않는 status: " + newStatus);
         }
         this.status = newStatus;
         // 신고하지 않기로 했으면 증거 영상을 둘 이유가 없다 → 즉시 파기.
         // 앱이 아니라 여기서 하는 이유: 어떤 경로로 상태를 바꾸든 규칙이 빠지지 않게.
-        if (STATUS_REVIEWED.equals(newStatus)) {
-            purgeVideo();
-        }
+        return STATUS_REVIEWED.equals(newStatus) ? purgeVideo() : null;
     }
 
     /**
-     * 영상(과 썸네일) 주소를 지우고 파기 시각을 남긴다. 이미 파기됐거나 영상이 없으면 아무것도 안 한다.
-     *
-     * ponytail: DB 의 주소만 지운다. 실제 파일은 저장소(S3 등)에 남아 있으므로, 저장소가 정해지면
-     * 여기서 파일 삭제까지 해야 진짜 파기가 된다. (노션 9,10주차 "영상 보관·파기 정책")
+     * 지금 영상을 받아도 되는가. 장치는 정차 후 WiFi 로 클립을 몇 시간 늦게 보낼 수 있어서,
+     * 그 사이 이미 파기됐거나(무시·2주 경과) 사용자가 무시를 눌렀으면 받지 않는다 — 받자마자 지울 영상이다.
      */
-    public void purgeVideo() {
-        if (videoUrl == null && thumbUrl == null) {
-            return;
+    public boolean canAttachVideo() {
+        return videoDeletedAt == null
+                && !STATUS_REVIEWED.equals(status)
+                && receivedAt.plus(VIDEO_RETENTION).isAfter(OffsetDateTime.now());
+    }
+
+    /** 장치가 올린 클립을 이벤트에 붙인다. 같은 클립을 다시 올리면 같은 이름이라 그대로 덮어쓴다. */
+    public void attachVideo(String key) {
+        if (!canAttachVideo()) {
+            throw new IllegalStateException("영상을 받을 수 없는 이벤트: " + id);
         }
-        this.videoUrl = null;
+        this.videoKey = key;
+    }
+
+    /**
+     * 영상(과 썸네일) 이름을 지우고 파기 시각을 남긴다. 이미 파기됐거나 영상이 없으면 아무것도 안 한다.
+     * DB 에서만 지우므로, 돌려받은 이름으로 호출한 쪽이 S3 파일도 지운다(ClipStorage.delete).
+     *
+     * @return 지운 영상의 S3 파일 이름. 지운 게 없으면 null
+     */
+    public String purgeVideo() {
+        if (videoKey == null && thumbUrl == null) {
+            return null;
+        }
+        String purged = videoKey;
+        this.videoKey = null;
         this.thumbUrl = null;
         this.videoDeletedAt = OffsetDateTime.now();
+        return purged;
     }
 
     /** 자동 파기 예정 시각. 이미 파기됐거나 영상이 없으면 null. */
     public OffsetDateTime getVideoExpiresAt() {
-        return (videoUrl == null) ? null : receivedAt.plus(VIDEO_RETENTION);
+        return (videoKey == null) ? null : receivedAt.plus(VIDEO_RETENTION);
     }
 
     /**
