@@ -1,14 +1,20 @@
 package com.safewatch.server.config;
 
+import com.safewatch.server.auth.JwtAuthFilter;
+import com.safewatch.server.auth.JwtProvider;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -61,7 +67,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtProvider jwtProvider) throws Exception {
         http
                 // 다른 주소에서 온 브라우저 요청을 허용한다(CORS).
                 //
@@ -97,17 +103,24 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
 
                         // 회원가입·로그인은 당연히 열려 있어야 한다. 토큰을 받기 전에 부르는 곳이다.
-                        .requestMatchers("/api/auth", "/api/auth/**").permitAll()
+                        // /api/auth/me 는 여기 없으므로 아래 규칙에 따라 로그인이 필요하다.
+                        .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
 
-                        // 이벤트 API 는 지금은 열어둔다.
-                        // 등록은 라즈베리파이가 부르는데 장치 인증 방식이 아직 정해지지 않았고,
-                        // 조회는 앱이 부르지만 로그인 기능이 아직 없다.
-                        // 장치 키 인증과 로그인이 붙으면 이 줄을 좁힌다.
-                        .requestMatchers("/api/events", "/api/events/**").permitAll()
+                        // 라즈베리파이가 부르는 두 곳(이벤트 등록, 영상 업로드)은 아직 열어둔다.
+                        // 장치는 사람처럼 로그인하지 않는다. 장치 등록과 함께 장치별 키로 막을 예정.
+                        .requestMatchers(HttpMethod.POST, "/api/events").permitAll()
+                        .requestMatchers(HttpMethod.PUT, "/api/events/clip").permitAll()
 
-                        // 위에 적지 않은 나머지는 전부 인증이 필요하다.
+                        // 위에 적지 않은 나머지(이벤트 목록·상세·신고/무시, 내 정보)는 로그인 필요.
                         .anyRequest().authenticated()
-                );
+                )
+
+                // 요청마다 토큰을 읽어 누구인지 확인한다. 막는 건 위의 규칙이 한다.
+                .addFilterBefore(new JwtAuthFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class)
+
+                // 로그인이 필요한데 토큰이 없거나 틀리면 401.
+                // 스프링 기본값은 403 이라, 앱이 "다시 로그인"과 "권한 없음"을 구분할 수 없다.
+                .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
 
         return http.build();
     }

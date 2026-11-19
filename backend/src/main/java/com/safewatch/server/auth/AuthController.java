@@ -3,9 +3,12 @@ package com.safewatch.server.auth;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.UUID;
 
 /**
  * 인증 API.
@@ -99,5 +102,19 @@ public class AuthController {
                 jwtProvider.createToken(user),
                 jwtProvider.getExpirySeconds(),
                 user);
+    }
+
+    /**
+     * 내 정보. 토큰으로 누구인지 알아내 그 사람의 정보를 준다.
+     *
+     * userId 는 JwtAuthFilter 가 토큰에서 꺼내 둔 값이다. 토큰이 없거나 틀리면
+     * SecurityConfig 규칙에 막혀 여기까지 오지 못한다(401).
+     * 토큰은 맞는데 그사이 계정이 지워졌다면 다시 로그인해야 하므로 역시 401.
+     */
+    @GetMapping("/me")
+    public UserResponse me(@AuthenticationPrincipal UUID userId) {
+        return userRepository.findById(userId)
+                .map(UserResponse::from)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "계정을 찾을 수 없습니다"));
     }
 }

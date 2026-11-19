@@ -127,25 +127,26 @@ lsof -nP -iTCP:5432 -sTCP:LISTEN     # DB 포트
 
 컨트롤러에 `/api` 를 직접 쓰지 않는다. 새 컨트롤러를 추가할 때 접두사를 빠뜨릴 수 없으므로 규칙이 갈라지지 않는다.
 
-## API 명세 (12개)
+## API 명세 (13개)
 
 | 분류 | 기능 | Method | URI | 상태 |
 |---|---|---|---|---|
 | 인증 | 회원가입 | POST | `/api/auth/signup` | **구현됨** |
-| 인증 | 로그인 | POST | `/api/auth/login` | 미구현 |
-| 인증 | 내 정보 조회 | GET | `/api/auth/me` | 미구현 |
+| 인증 | 로그인 (JWT 발급) | POST | `/api/auth/login` | **구현됨** |
+| 인증 | 내 정보 조회 | GET | `/api/auth/me` | **구현됨** (로그인 필요) |
 | 인증 | FCM 토큰 등록 | POST | `/api/auth/fcm-token` | 미구현 |
-| 이벤트 | 위험 이벤트 업로드 | POST | `/api/events` | **구현됨** |
-| 이벤트 | 위험 이벤트 목록 | GET | `/api/events?since=` | **구현됨** |
-| 이벤트 | 이벤트 상세 | GET | `/api/events/{id}` | **구현됨** |
-| 이벤트 | 이벤트 상태 변경 | PATCH | `/api/events/{id}` | **구현됨** |
+| 이벤트 | 위험 이벤트 업로드 (장치) | POST | `/api/events` | **구현됨** |
+| 이벤트 | 영상 클립 업로드 (장치) | PUT | `/api/events/clip` | **구현됨** |
+| 이벤트 | 위험 이벤트 목록 | GET | `/api/events?since=` | **구현됨** (로그인 필요) |
+| 이벤트 | 이벤트 상세 | GET | `/api/events/{id}` | **구현됨** (로그인 필요) |
+| 이벤트 | 이벤트 상태 변경 | PATCH | `/api/events/{id}` | **구현됨** (로그인 필요) |
 | 장치 | 내 장치 목록 | GET | `/api/devices` | 미구현 |
 | 장치 | 장치 등록 | POST | `/api/devices` | 미구현 |
 | 신고 | 신고 등록 | POST | `/api/reports` | 미구현 |
 | 신고 | 내 신고 목록 | GET | `/api/reports` | 미구현 |
 
-로그인 시 JWT를 발급하고 이후 요청은 `Authorization: Bearer <token>` 헤더를 쓴다(예정).
-이벤트 업로드는 앱이 아니라 **라즈베리파이 장치**가 호출한다.
+로그인하면 JWT 를 받고, 이후 요청은 `Authorization: Bearer <token>` 헤더를 붙인다. 토큰이 없거나 가짜·위조·만료(2시간)면 **401**.
+이벤트 업로드와 영상 클립 업로드는 앱이 아니라 **라즈베리파이 장치**가 호출하며, 장치 인증이 붙기 전까지는 토큰 없이 열려 있다.
 
 ### 스키마를 바꿔야 할 때
 
@@ -331,7 +332,7 @@ curl -X POST http://localhost:8080/api/auth/signup \
 
 `SecurityConfig` 는 넣는 순간 **모든 요청을 막는 것이 기본값**이다. 열 곳을 직접 적어야 한다.
 
-현재 열어둔 곳은 `/api/auth/**` 와 `/api/events/**` 두 갈래다. 이벤트 API 를 연 이유는 등록을 부르는 라즈베리파이의 장치 인증 방식이 아직 정해지지 않았고, 조회를 부르는 앱의 로그인 기능도 아직 없기 때문이다. 둘 다 붙으면 이 범위를 좁힌다.
+현재 열어둔 곳은 회원가입·로그인, 그리고 장치가 부르는 `POST /api/events`·`PUT /api/events/clip` 뿐이다(2026-11-19 인증 2단계). 나머지는 `JwtAuthFilter` 가 토큰에서 꺼낸 사용자가 있어야 통과하고, 없으면 401 이다(스프링 기본값 403 을 `HttpStatusEntryPoint` 로 바꿈). 장치 쪽은 장치 등록과 장치별 키가 붙으면 닫는다.
 
 그리고 **오류 응답 경로도 함께 열어야 한다.**
 
@@ -420,9 +421,9 @@ users 1──N user_fcm_tokens
 
 ## 다음 할 일
 
-1. **인증 1-B** — 로그인과 JWT 발급. JWT 라이브러리 추가, 비밀키 설정, `LoginRequest`/`LoginResponse`, `JwtProvider`
-2. **인증 2단계** — 토큰을 검사하는 필터, `/api/auth/me`, FCM 토큰 등록(`user_fcm_tokens` 사용)
-3. 장치·신고 — Device, Report 엔티티와 엔드포인트
+1. **로그인 시도 제한** — 2026-11-09 실제 무차별 대입 시도가 있었다
+2. **장치 등록 + 장치별 키 + 내 장치 이벤트만 보기** — 그 뒤 장치용 두 주소를 닫는다
+3. 신고 API, FCM 토큰 등록(`user_fcm_tokens`, 푸시와 함께) — Device, Report 엔티티와 엔드포인트
 4. FCM 푸시 — 이벤트 수신 시 해당 장치 소유자에게 발송
 5. DTO / Service 계층 분리, 예외 처리, 유효성 검증
 6. React Native 앱 (별도) — 로그인 → 목록(offline-first) → 상세(영상 + 카카오맵) → 신고
@@ -436,6 +437,7 @@ users 1──N user_fcm_tokens
 ## 변경 이력
 
 ### 2026-11-19
+- **인증 2단계 — 토큰 검사.** `JwtAuthFilter`(요청마다 Bearer 토큰 확인), `JwtProvider.parseUserId`, `GET /api/auth/me`. 이벤트 목록·상세·신고/무시는 이제 로그인 필요, 없거나 가짜·위조·만료 토큰이면 401. 장치용 `POST /api/events`·`PUT /api/events/clip` 은 그대로 열림. 앱은 401 을 받으면 로그인 화면으로. 단위 테스트 `JwtProviderTest` 4개(진짜 통과, 다른 열쇠·바꿔치기·만료 거절). 8081 에서 확인: 토큰 없음/가짜/위조 서명 401, 정상 200, `/me` 응답에 해시 없음, 장치용 두 곳은 가짜 토큰이 붙어도 통과, 오류 응답(404) 유지, CORS 사전 요청 200.
 - **도메인·https: `https://safewatch.co.kr`.** 가비아에서 등록, A 레코드 → 고정 IP. Let's Encrypt 인증서(자동 갱신, 갱신 리허설 성공), http 는 https 로 자동 이동(IP 로 들어와도 도메인으로). nginx 업로드 제한 1MB → 50MB. https 로 8MB 클립 업로드 200 확인. 앱 기본 서버 주소도 도메인으로. 8080 은 HW 가 새 주소로 옮기면 닫는다.
 - **고정 IP(Elastic IP) `13.124.88.158`.** 도메인·https 준비 1단계. 예전 주소 `3.34.130.6` 은 끊김. 앱 기본 서버 주소(`frontend/api.js`)도 변경. 도메인은 `safewatch.co.kr` 로 정함(구매 후 https 연결 예정).
 - **영상 클립 업로드 (S3).** `PUT /api/events/clip` 추가, `ClipStorage`(S3 올리기·지우기·임시 재생 주소) 추가, AWS SDK `software.amazon.awssdk:s3` 2.57.0. `events.video_url` → `video_key`(S3 파일 이름), 운영 DB 변경분 `backend/migrations/2026-11-19_video_key.sql`. 파기(무시·2주) 때 S3 파일도 삭제 — 9,10주차에 남겨둔 "저장소가 정해지면 실제 파일 삭제" 과제 해결.

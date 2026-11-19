@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.UUID;
 
 /**
  * 로그인에 성공한 사람에게 줄 토큰(JWT)을 만든다.
@@ -56,5 +57,17 @@ public class JwtProvider {
     /** 앱에게 "이 토큰은 몇 초 뒤에 만료된다"고 알려주기 위한 값. */
     public long getExpirySeconds() {
         return expiryMinutes * 60;
+    }
+
+    /**
+     * 토큰을 검사하고 사용자 id 를 꺼낸다.
+     *
+     * 서명이 우리 열쇠로 된 것인지, 만료되지 않았는지를 jjwt 가 확인한다.
+     * 하나라도 틀리면 JwtException 을 던진다. 내용을 한 글자라도 고치면 서명이 맞지 않는다.
+     */
+    public UUID parseUserId(String token) {
+        String subject = Jwts.parser().verifyWith(key).build()
+                .parseSignedClaims(token).getPayload().getSubject();
+        return UUID.fromString(subject);
     }
 }
