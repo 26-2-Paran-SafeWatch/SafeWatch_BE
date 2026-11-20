@@ -11,6 +11,11 @@ spring:
     show-sql: true
 server:
   port: 8080
+  # 앞단 nginx 가 https 를 풀어 http 로 넘긴다. 그대로 두면 스프링은 자기를 http 로 알아서,
+  # 브라우저의 Origin(https://safewatch.co.kr)을 다른 사이트로 보고 403(Invalid CORS request) 을 낸다.
+  # nginx 가 붙이는 X-Forwarded-Proto/For 를 믿게 한다 → https 로 인식 + 실제 접속자 IP 기록.
+  # 믿는 건 내부(127.0.0.1 등)에서 온 헤더뿐이라, 밖에서 8080 으로 꾸며 보내도 무시된다.
+  forward-headers-strategy: native
 
 safewatch:
   jwt:

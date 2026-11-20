@@ -437,6 +437,7 @@ users 1──N user_fcm_tokens
 ## 변경 이력
 
 ### 2026-11-19
+- **버그 수정 — https 전환 후 웹에서 가입·로그인 403.** nginx 가 https 를 풀어 http 로 넘기니 스프링이 자기를 `http://safewatch.co.kr` 로 알고, 브라우저의 `Origin: https://safewatch.co.kr` 을 다른 사이트로 봐서 `Invalid CORS request` 403. `server.forward-headers-strategy: native` 로 nginx 의 `X-Forwarded-Proto` 를 믿게 해 해결(내부 프록시가 붙인 헤더만 믿음 — 8080 으로 직접 꾸며 보내면 무시). curl 은 `Origin` 을 안 붙여서 https 검증 때 놓쳤다 → 브라우저 흐름은 `Origin` 을 붙여 시험한다.
 - **인증 2단계 — 토큰 검사.** `JwtAuthFilter`(요청마다 Bearer 토큰 확인), `JwtProvider.parseUserId`, `GET /api/auth/me`. 이벤트 목록·상세·신고/무시는 이제 로그인 필요, 없거나 가짜·위조·만료 토큰이면 401. 장치용 `POST /api/events`·`PUT /api/events/clip` 은 그대로 열림. 앱은 401 을 받으면 로그인 화면으로. 단위 테스트 `JwtProviderTest` 4개(진짜 통과, 다른 열쇠·바꿔치기·만료 거절). 8081 에서 확인: 토큰 없음/가짜/위조 서명 401, 정상 200, `/me` 응답에 해시 없음, 장치용 두 곳은 가짜 토큰이 붙어도 통과, 오류 응답(404) 유지, CORS 사전 요청 200.
 - **도메인·https: `https://safewatch.co.kr`.** 가비아에서 등록, A 레코드 → 고정 IP. Let's Encrypt 인증서(자동 갱신, 갱신 리허설 성공), http 는 https 로 자동 이동(IP 로 들어와도 도메인으로). nginx 업로드 제한 1MB → 50MB. https 로 8MB 클립 업로드 200 확인. 앱 기본 서버 주소도 도메인으로. 8080 은 HW 가 새 주소로 옮기면 닫는다.
 - **고정 IP(Elastic IP) `13.124.88.158`.** 도메인·https 준비 1단계. 예전 주소 `3.34.130.6` 은 끊김. 앱 기본 서버 주소(`frontend/api.js`)도 변경. 도메인은 `safewatch.co.kr` 로 정함(구매 후 https 연결 예정).
